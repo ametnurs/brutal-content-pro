@@ -4,7 +4,10 @@ import tempfile
 import time
 from pathlib import Path
 import streamlit as st
+import importlib
 
+import generator
+importlib.reload(generator)
 from generator import generate_video_variations, create_zip_archive
 from ai_helper import (
     BUILTIN_HOOK_TEMPLATES,

@@ -213,7 +213,8 @@ def generate_video_variations(
     hook_duration=4,
     box_color="black@0.75",
     text_color="white",
-    progress_callback=None
+    progress_callback=None,
+    **kwargs
 ):
     """
     Me-render variasi video masif dengan kombinasi cerdas:
