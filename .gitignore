@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+temp_brutal/
+temp_audio/
+custom_voices/device_hwid.txt
+custom_voices/license.json
