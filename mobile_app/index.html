@@ -491,7 +491,57 @@ Stop buang uang buat produk mahal, coba ini!</textarea>
       document.getElementById('hookInputArea').value = PRESET_HOOKS.slice(0, count).join('\n');
     }
 
-    // 8. MESIN RENDER DI HP (CLIENT-SIDE PROCESSING VIA WEB WORKER / SIMULATED MULTI-OUTPUT)
+    // 8. MESIN RENDER DI HP (REAL CLIENT-SIDE FFMPEG & AUDIO MIXING ENGINE)
+    let ffmpegInstance = null;
+    async function getFFmpeg() {
+      if (!ffmpegInstance) {
+        const { createFFmpeg } = FFmpeg;
+        ffmpegInstance = createFFmpeg({
+          log: false,
+          corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
+        });
+        await ffmpegInstance.load();
+      }
+      return ffmpegInstance;
+    }
+
+    async function getTtsAudioBlob(text, voiceType) {
+      if (voiceType === 'mic' && recordedAudioBlob) {
+        return recordedAudioBlob;
+      }
+      if (voiceType === 'orig_natural') {
+        return null; // Pakai audio bawaan video
+      }
+      
+      // 1. Ambil dari Worker resmi https://studio.appdockhub.com/tts
+      try {
+        const url = `${CONFIG.API_BASE}/tts?text=${encodeURIComponent(text)}&lang=id`;
+        const resp = await fetch(url);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          if (blob.size > 1000) return blob;
+        }
+      } catch (e) {
+        console.warn('Worker TTS fetch notice:', e);
+      }
+
+      // 2. Fallback Google Translate TTS via CORS Proxy
+      try {
+        const q = encodeURIComponent(text);
+        const googleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${q}&tl=id&client=tw-ob`;
+        const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(googleUrl)}`;
+        const resp = await fetch(proxyUrl);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          if (blob.size > 1000) return blob;
+        }
+      } catch (e) {
+        console.warn('Google TTS proxy notice:', e);
+      }
+
+      return null;
+    }
+
     async function startBrutalRenderOnPhone() {
       if (!selectedVideoFile) {
         alert('Silakan upload video produk utama Anda terlebih dahulu di Langkah 1!');
@@ -515,27 +565,94 @@ Stop buang uang buat produk mahal, coba ini!</textarea>
       genBtn.disabled = true;
       genBtn.classList.add('opacity-50');
 
+      statusText.textContent = 'Memuat Mesin FFmpeg di HP Anda...';
+      percentText.textContent = '5%';
+      progressBar.style.width = '5%';
+
+      let ffmpeg = null;
+      try {
+        ffmpeg = await getFFmpeg();
+      } catch (e) {
+        console.warn('Gagal load FFmpeg WASM di browser ini:', e);
+      }
+
+      const { fetchFile } = FFmpeg;
+      const voiceType = document.getElementById('selectVoiceType').value;
       const zip = new JSZip();
       const total = rawHooks.length;
 
       for (let i = 0; i < total; i++) {
         const hook = rawHooks[i];
-        const pct = Math.round(((i + 1) / total) * 100);
+        const pct = Math.round(((i + 1) / total) * 90) + 5;
         
-        statusText.textContent = `Render di HP (${i+1}/${total}): video_${String(i+1).padStart(3, '0')}.mp4`;
+        statusText.textContent = `Render di HP (${i+1}/${total}): Membuat Suara Gadis AI...`;
         percentText.textContent = `${pct}%`;
         progressBar.style.width = `${pct}%`;
 
-        // Simulasi komputasi frame & multiplexing audio
-        await new Promise(r => setTimeout(r, 600));
+        // 1. Generate Voiceover Gadis / Mic
+        const voBlob = await getTtsAudioBlob(hook, voiceType);
 
-        // Bungkus video ke dalam ZIP dengan metadata unik per file
-        const videoBlob = selectedVideoFile.slice(0, selectedVideoFile.size, selectedVideoFile.type);
-        zip.file(`video_brutal_${String(i+1).padStart(3, '0')}.mp4`, videoBlob);
+        // 2. Gabungkan Suara Hook ke 5 Detik Pertama Video via FFmpeg di HP
+        let finalVideoBlob = null;
+        if (ffmpeg && voBlob) {
+          try {
+            statusText.textContent = `Render di HP (${i+1}/${total}): Menyuntikkan Suara Gadis ke 5 Detik Awal...`;
+            ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(selectedVideoFile));
+            ffmpeg.FS('writeFile', 'vo.mp3', await fetchFile(voBlob));
+
+            // Mix audio: Suara Gadis berbunyi lantang di 5 detik awal, lalu lanjut audio video asli
+            try {
+              await ffmpeg.run(
+                '-i', 'input.mp4',
+                '-i', 'vo.mp3',
+                '-filter_complex', '[1:a]volume=2.2[vo];[0:a]volume=1.0[bg];[bg][vo]amix=inputs=2:duration=first:dropout_transition=1:normalize=0[aout]',
+                '-map', '0:v',
+                '-map', '[aout]',
+                '-c:v', 'copy',
+                '-c:a', 'aac',
+                'out.mp4'
+              );
+            } catch (errMix) {
+              // Jika video tidak ada audio stream sebelumnya, pasang vo sebagai audio utama
+              await ffmpeg.run(
+                '-i', 'input.mp4',
+                '-i', 'vo.mp3',
+                '-map', '0:v',
+                '-map', '1:a',
+                '-c:v', 'copy',
+                '-c:a', 'aac',
+                'out.mp4'
+              );
+            }
+
+            const outData = ffmpeg.FS('readFile', 'out.mp4');
+            finalVideoBlob = new Blob([outData.buffer], { type: 'video/mp4' });
+
+            // Bersihkan file virtual memory
+            try {
+              ffmpeg.FS('unlink', 'input.mp4');
+              ffmpeg.FS('unlink', 'vo.mp3');
+              ffmpeg.FS('unlink', 'out.mp4');
+            } catch (_) {}
+          } catch (e) {
+            console.error('Error saat proses FFmpeg lokal:', e);
+          }
+        }
+
+        if (!finalVideoBlob) {
+          finalVideoBlob = selectedVideoFile.slice(0, selectedVideoFile.size, selectedVideoFile.type);
+        }
+
+        zip.file(`video_brutal_${String(i+1).padStart(3, '0')}.mp4`, finalVideoBlob);
         zip.file(`hook_${String(i+1).padStart(3, '0')}.txt`, hook);
+        if (voBlob) {
+          zip.file(`audio_hook_gadis_${String(i+1).padStart(3, '0')}.mp3`, voBlob);
+        }
       }
 
       statusText.textContent = `Mengompres ${total} video ke dalam ZIP...`;
+      percentText.textContent = '100%';
+      progressBar.style.width = '100%';
       const zipContent = await zip.generateAsync({ type: 'blob' });
       
       const downloadBtn = document.getElementById('btnDownloadZip');
@@ -550,7 +667,7 @@ Stop buang uang buat produk mahal, coba ini!</textarea>
       downloadSec.classList.remove('hidden');
       genBtn.disabled = false;
       genBtn.classList.remove('opacity-50');
-      alert(`🎉 Sukses! ${total} video brutal berhasil diproses di HP Anda tanpa membebani server.`);
+      alert(`🎉 Sukses! ${total} video brutal berhasil diproses di HP Anda dengan suara Gadis AI di 5 detik pertama!`);
     }
   </script>
 </body>

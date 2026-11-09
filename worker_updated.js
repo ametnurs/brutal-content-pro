@@ -544,6 +544,26 @@ export default {
 
     try {
       // ----------------------------------------------------------------------
+      // ROUTE TTS: GET /tts?text=... -> AUDIO GENERATOR FOR MOBILE APP (CORS ENABLED)
+      // ----------------------------------------------------------------------
+      if (url.pathname === '/tts') {
+        const text = url.searchParams.get('text') || 'Halo';
+        const lang = url.searchParams.get('lang') || 'id';
+        const q = encodeURIComponent(text.slice(0, 200));
+        const ttsUrl = https://translate.google.com/translate_tts?ie=UTF-8&q=&tl=&client=tw-ob;
+        const ttsResp = await fetch(ttsUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        });
+        return new Response(ttsResp.body, {
+          headers: {
+            ...CORS_HEADERS,
+            'Content-Type': 'audio/mpeg',
+            'Cache-Control': 'public, max-age=86400'
+          }
+        });
+      }
+
+      // ----------------------------------------------------------------------
       // ROUTE 0: GET /beli & /order -> REDIRECT KE BOT TELEGRAM DENGAN PRODUK & REF
       // ----------------------------------------------------------------------
       if (url.pathname === '/beli' || url.pathname === '/order') {
