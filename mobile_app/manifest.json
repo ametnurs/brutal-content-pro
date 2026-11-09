@@ -1,0 +1,24 @@
+{
+  "name": "TikTok Brutal Content Pro",
+  "short_name": "BrutalPro",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "theme_color": "#0B0D13",
+  "background_color": "#0A0C10",
+  "description": "Mesin Pengganda Konten Affiliate TikTok Otomatis (Local Mobile Processing Engine)",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
