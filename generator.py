@@ -108,23 +108,31 @@ def generate_tts_audio(text, output_audio_path, voice="id-ID-GadisNeural", rate=
     Generate audio voiceover dari teks hook menggunakan edge-tts (Microsoft Natural Voice).
     Dijalankan di thread baru dengan event loop terisolasi agar aman di dalam Streamlit.
     """
+    clean_text = text.strip()
+    if not clean_text:
+        return False
+
     def _worker():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            communicate = edge_tts.Communicate(text, voice, rate=rate)
+            communicate = edge_tts.Communicate(clean_text, voice, rate=rate)
             loop.run_until_complete(communicate.save(str(output_audio_path)))
-            return True
+            return Path(output_audio_path).exists() and Path(output_audio_path).stat().st_size > 500
         finally:
             loop.close()
 
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_worker)
-            return future.result(timeout=15)
-    except Exception as e:
-        print(f"Peringatan TTS: Gagal membuat VO untuk '{text}': {e}")
-        return False
+    for attempt in range(2):
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_worker)
+                success = future.result(timeout=25)
+                if success:
+                    return True
+        except Exception as e:
+            print(f"Peringatan TTS attempt {attempt+1}: {e}")
+
+    return False
 
 def generate_elevenlabs_clone(text, sample_audio_path, output_audio_path, api_key):
     """
@@ -399,9 +407,9 @@ def generate_video_variations(
                 speed_str = f",atempo={speed_factor}" if enable_speed_jitter else ""
                 filter_complex = (
                     f"[0:v]{vf_str}[vout];"
-                    f"[0:a]volume=0.35{speed_str}[bg];"
-                    f"[1:a]volume=1.25[vo];"
-                    f"[bg][vo]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+                    f"[1:a]volume=1.8[vo];"
+                    f"[0:a]volume=1.0{speed_str}[bg];"
+                    f"[bg][vo]amix=inputs=2:duration=first:dropout_transition=1:normalize=0[aout]"
                 )
                 cmd.extend([
                     "-filter_complex", filter_complex,

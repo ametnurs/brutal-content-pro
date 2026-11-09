@@ -420,20 +420,20 @@ with main_tab1:
         </div>
     """, unsafe_allow_html=True)
     
-    enable_vo = st.checkbox("🎙️ Aktifkan Voiceover / Audio Variasi", value=True)
+    enable_vo = st.checkbox("🎙️ Aktifkan Suara Pembaca Hook (Detik 0–5)", value=True)
     
     vo_voice_choice = st.selectbox(
         "Pilihan Suara:",
         [
-            "🎬 Suara Asli Video (Ekspresi Natural Asli + Variasi Sidik Jari Unik Tiap Video)",
             "Gadis (Cewek TikTok Natural - AI)",
             "Ardi (Cowok Percaya Diri - AI)",
             "🎙️ Rekam Suara Saya Sendiri (Direct VO)",
-            "🤖 AI Voice Cloning (ElevenLabs)"
+            "🤖 AI Voice Cloning (ElevenLabs)",
+            "🎬 Audio Bawaan Video Saja (Tanpa Suara Hook Tambahan)"
         ],
         index=0,
         disabled=not enable_vo,
-        help="Opsi 'Suara Asli Video' mengekstrak audio dari video yang Anda upload agar ekspresi & intonasi tetap 100% natural, lalu memberi variasi mikro unik di tiap video agar lolos sensor duplikasi TikTok!"
+        help="Pilihan suara Gadis/Ardi akan membacakan teks hook Anda di detik 0-5 secara lantang, lalu dilanjutkan oleh audio video Anda!"
     )
 
     user_audio_path = st.session_state["user_custom_audio_path"]
@@ -441,9 +441,12 @@ with main_tab1:
     vo_type_selected = "edge_tts"
 
     if enable_vo:
-        if "Suara Asli Video" in vo_voice_choice:
+        if "Gadis" in vo_voice_choice or "Ardi" in vo_voice_choice:
+            vo_type_selected = "edge_tts"
+            st.success("✅ **Hook VO Aktif:** AI akan membacakan teks hook di 5 detik pertama dengan lantang, lalu menyambung ke audio video Anda!")
+        elif "Audio Bawaan Video" in vo_voice_choice:
             vo_type_selected = "video_audio_natural"
-            st.info("💡 **Mode Ekspresi Asli:** Audio master diambil langsung dari video yang Anda upload. Di setiap video variasi, frekuensi dan mikro-pitch dirombak otomatis sehingga ekspresi tetap natural namun sidik jari audio di TikTok 100% unik!")
+            st.info("💡 **Mode Audio Video Bawaan:** Hanya memutar audio bawaan dari video tanpa pembaca hook tambahan.")
         elif "Rekam Suara" in vo_voice_choice or "Voice Cloning" in vo_voice_choice:
             st.caption("Rekam suara lewat mic HP Anda (5–10 detik):")
             recorded_audio = st.audio_input("🔴 Tekan untuk Rekam Suara Langsung:")
@@ -463,8 +466,6 @@ with main_tab1:
                 elevenlabs_key = st.text_input("ElevenLabs API Key:", type="password")
             else:
                 vo_type_selected = "user_recording_direct"
-        else:
-            vo_type_selected = "edge_tts"
 
     # Nada & Kecepatan Suara
     col_tune1, col_tune2 = st.columns(2)
