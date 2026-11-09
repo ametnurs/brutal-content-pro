@@ -5,6 +5,9 @@ import textwrap
 import zipfile
 import asyncio
 import concurrent.futures
+import time
+import urllib.request
+import urllib.parse
 from pathlib import Path
 import edge_tts
 import requests
@@ -105,34 +108,91 @@ def wrap_hook_text(text, max_chars_per_line=24):
 
 def generate_tts_audio(text, output_audio_path, voice="id-ID-GadisNeural", rate="+10%"):
     """
-    Generate audio voiceover dari teks hook menggunakan edge-tts (Microsoft Natural Voice).
-    Dijalankan di thread baru dengan event loop terisolasi agar aman di dalam Streamlit.
+    Generate audio voiceover dari teks hook secara bulletproof:
+    1. Coba Microsoft Edge-TTS (Natural voice: Gadis/Ardi).
+    2. Jika gagal/terblokir di cloud, otomatis fallback ke Google Indonesian TTS.
+    3. Normalisasi hasil ke clean 44100Hz stereo WAV via FFmpeg agar 100% kompatibel dengan amix.
     """
     clean_text = text.strip()
     if not clean_text:
         return False
 
-    def _worker():
+    output_audio_path = str(output_audio_path)
+    temp_mp3 = output_audio_path + ".raw.mp3"
+    got_audio = False
+
+    # 1. Coba Edge-TTS
+    def _worker_edge():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
             communicate = edge_tts.Communicate(clean_text, voice, rate=rate)
-            loop.run_until_complete(communicate.save(str(output_audio_path)))
-            return Path(output_audio_path).exists() and Path(output_audio_path).stat().st_size > 500
-        finally:
-            loop.close()
-
-    for attempt in range(2):
-        try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(_worker)
-                success = future.result(timeout=25)
-                if success:
-                    return True
+            loop.run_until_complete(communicate.save(temp_mp3))
+            return os.path.exists(temp_mp3) and os.path.getsize(temp_mp3) > 1000
         except Exception as e:
-            print(f"Peringatan TTS attempt {attempt+1}: {e}")
+            print(f"Edge-TTS worker notice: {e}")
+            return False
+        finally:
+            try:
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                loop.close()
+            except Exception:
+                pass
 
-    return False
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_worker_edge)
+            if future.result(timeout=15):
+                got_audio = True
+    except Exception as e:
+        print(f"Edge-TTS notice ({voice}): {e}")
+
+    # 2. Fallback ke Google Indonesian TTS jika Edge-TTS gagal
+    if not got_audio:
+        try:
+            q = urllib.parse.quote(clean_text)
+            url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={q}&tl=id&client=tw-ob"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, timeout=10) as resp, open(temp_mp3, "wb") as f:
+                f.write(resp.read())
+            if os.path.exists(temp_mp3) and os.path.getsize(temp_mp3) > 1000:
+                got_audio = True
+                print("Fallback Google TTS: Sukses!")
+        except Exception as e:
+            print(f"Google TTS fallback notice: {e}")
+
+    if not got_audio:
+        return False
+
+    # 3. Normalisasi MP3 ke 44100Hz stereo WAV via FFmpeg
+    try:
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-i", temp_mp3,
+            "-ar", "44100",
+            "-ac", "2",
+            "-c:a", "pcm_s16le",
+            output_audio_path
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if os.path.exists(temp_mp3):
+            try:
+                os.remove(temp_mp3)
+            except Exception:
+                pass
+        return os.path.exists(output_audio_path) and os.path.getsize(output_audio_path) > 2000
+    except Exception as e:
+        print(f"FFmpeg normalize error: {e}")
+        # Jika normalize gagal, rename temp_mp3 langsung ke output
+        try:
+            if os.path.exists(output_audio_path): os.remove(output_audio_path)
+            os.rename(temp_mp3, output_audio_path)
+            return True
+        except Exception:
+            return False
 
 def generate_elevenlabs_clone(text, sample_audio_path, output_audio_path, api_key):
     """
@@ -407,8 +467,8 @@ def generate_video_variations(
                 speed_str = f",atempo={speed_factor}" if enable_speed_jitter else ""
                 filter_complex = (
                     f"[0:v]{vf_str}[vout];"
-                    f"[1:a]volume=1.8[vo];"
-                    f"[0:a]volume=1.0{speed_str}[bg];"
+                    f"[1:a]volume=2.2,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[vo];"
+                    f"[0:a]volume=1.0{speed_str},aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[bg];"
                     f"[bg][vo]amix=inputs=2:duration=first:dropout_transition=1:normalize=0[aout]"
                 )
                 cmd.extend([
@@ -417,7 +477,7 @@ def generate_video_variations(
                     "-map", "[aout]"
                 ])
             else:
-                filter_complex = f"[0:v]{vf_str}[vout];[1:a]apad[aout]"
+                filter_complex = f"[0:v]{vf_str}[vout];[1:a]volume=2.2,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,apad[aout]"
                 cmd.extend([
                     "-filter_complex", filter_complex,
                     "-map", "[vout]",

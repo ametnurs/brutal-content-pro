@@ -574,7 +574,7 @@ with main_tab1:
             def on_progress(done, total, filename):
                 pct = done / total
                 progress_bar.progress(pct)
-                status_text.info(f"⏳ Render ({done}/{total}): **{filename}**...")
+                status_text.info(f"⏳ Render ({done}/{total}): **{filename}** (🎙️ Audio Hook & CapCut FX Aktif)...")
 
             vo_voice_id = "id-ID-GadisNeural" if "Gadis" in vo_voice_choice else "id-ID-ArdiNeural"
 
