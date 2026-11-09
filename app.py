@@ -339,6 +339,14 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
+    st.markdown("### 🎬 Efek CapCut & TikTok Viral")
+    st.caption("Membuat setiap video tampil beda dengan nuansa editing profesional:")
+    enable_capcut_fx = st.checkbox("🎭 CapCut Color Moods (Vibrant, Warm, Cool, Moody)", value=True)
+    enable_white_flash = st.checkbox("✨ White Flash Hook Opening (0.15s)", value=True)
+    enable_vignette = st.checkbox("🕶️ Soft CapCut Vignette", value=True)
+    enable_film_grain = st.checkbox("🎞️ Micro Film Grain (Bypass Bit-Level)", value=True)
+
+    st.divider()
     st.markdown("### ⚙️ Algoritma Duplikasi TikTok")
     st.caption("Parameter ini mengacak sidik jari video agar lolos sensor re-upload:")
     
@@ -352,15 +360,17 @@ with st.sidebar:
     hook_duration = st.slider("Durasi Hook (detik)", min_value=2, max_value=6, value=4)
     box_color_choice = st.selectbox(
         "Warna Background Teks",
-        ["Hitam Transparan", "Merah TikTok", "Kuning Kontras", "Biru"],
+        ["Otomatis Berganti Tiap Video (Dynamic)", "Kuning Kontras (TikTok Shop)", "Hitam Transparan (CapCut)", "Merah Flash Sale", "Biru"],
         index=0
     )
     box_color_map = {
-        "Hitam Transparan": "black@0.75",
-        "Merah TikTok": "red@0.85",
-        "Kuning Kontras": "yellow@0.9",
+        "Otomatis Berganti Tiap Video (Dynamic)": "auto",
+        "Hitam Transparan (CapCut)": "black@0.75",
+        "Merah Flash Sale": "red@0.85",
+        "Kuning Kontras (TikTok Shop)": "yellow@0.9",
         "Biru": "blue@0.8"
     }
+    dynamic_box_theme = "auto" if "Otomatis" in box_color_choice else "custom"
     text_color_choice = "black" if "Kuning" in box_color_choice else "white"
 
 # Tab Navigasi Utama (Mobile Segmented)
@@ -407,45 +417,51 @@ with main_tab1:
         </div>
     """, unsafe_allow_html=True)
     
-    enable_vo = st.checkbox("🎙️ Aktifkan Voiceover Pembaca Hook", value=True)
+    enable_vo = st.checkbox("🎙️ Aktifkan Voiceover / Audio Variasi", value=True)
     
     vo_voice_choice = st.selectbox(
         "Pilihan Suara:",
         [
-            "Gadis (Cewek TikTok Natural)",
-            "Ardi (Cowok Percaya Diri)",
+            "🎬 Suara Asli Video (Ekspresi Natural Asli + Variasi Sidik Jari Unik Tiap Video)",
+            "Gadis (Cewek TikTok Natural - AI)",
+            "Ardi (Cowok Percaya Diri - AI)",
             "🎙️ Rekam Suara Saya Sendiri (Direct VO)",
             "🤖 AI Voice Cloning (ElevenLabs)"
         ],
         index=0,
-        disabled=not enable_vo
+        disabled=not enable_vo,
+        help="Opsi 'Suara Asli Video' mengekstrak audio dari video yang Anda upload agar ekspresi & intonasi tetap 100% natural, lalu memberi variasi mikro unik di tiap video agar lolos sensor duplikasi TikTok!"
     )
 
     user_audio_path = st.session_state["user_custom_audio_path"]
     elevenlabs_key = None
     vo_type_selected = "edge_tts"
 
-    if enable_vo and ("Rekam Suara" in vo_voice_choice or "Voice Cloning" in vo_voice_choice):
-        st.caption("Rekam suara lewat mic HP Anda (5–10 detik):")
-        recorded_audio = st.audio_input("🔴 Tekan untuk Rekam Suara Langsung:")
-        if recorded_audio:
-            saved_rec_path = VOICES_DIR / "sample_user_mic.wav"
-            with open(saved_rec_path, "wb") as f:
-                f.write(recorded_audio.read())
-            st.session_state["user_custom_audio_path"] = str(saved_rec_path)
-            user_audio_path = str(saved_rec_path)
-            st.success("✅ Rekaman tersimpan!")
+    if enable_vo:
+        if "Suara Asli Video" in vo_voice_choice:
+            vo_type_selected = "video_audio_natural"
+            st.info("💡 **Mode Ekspresi Asli:** Audio master diambil langsung dari video yang Anda upload. Di setiap video variasi, frekuensi dan mikro-pitch dirombak otomatis sehingga ekspresi tetap natural namun sidik jari audio di TikTok 100% unik!")
+        elif "Rekam Suara" in vo_voice_choice or "Voice Cloning" in vo_voice_choice:
+            st.caption("Rekam suara lewat mic HP Anda (5–10 detik):")
+            recorded_audio = st.audio_input("🔴 Tekan untuk Rekam Suara Langsung:")
+            if recorded_audio:
+                saved_rec_path = VOICES_DIR / "sample_user_mic.wav"
+                with open(saved_rec_path, "wb") as f:
+                    f.write(recorded_audio.read())
+                st.session_state["user_custom_audio_path"] = str(saved_rec_path)
+                user_audio_path = str(saved_rec_path)
+                st.success("✅ Rekaman tersimpan!")
 
-        if user_audio_path and Path(user_audio_path).exists():
-            st.audio(user_audio_path)
+            if user_audio_path and Path(user_audio_path).exists():
+                st.audio(user_audio_path)
 
-        if "Voice Cloning" in vo_voice_choice:
-            vo_type_selected = "elevenlabs"
-            elevenlabs_key = st.text_input("ElevenLabs API Key:", type="password")
+            if "Voice Cloning" in vo_voice_choice:
+                vo_type_selected = "elevenlabs"
+                elevenlabs_key = st.text_input("ElevenLabs API Key:", type="password")
+            else:
+                vo_type_selected = "user_recording_direct"
         else:
-            vo_type_selected = "user_recording_direct"
-    else:
-        vo_type_selected = "edge_tts"
+            vo_type_selected = "edge_tts"
 
     # Nada & Kecepatan Suara
     col_tune1, col_tune2 = st.columns(2)
@@ -568,6 +584,11 @@ with main_tab1:
                     enable_flip=enable_flip,
                     enable_color_jitter=enable_color,
                     enable_speed_jitter=enable_speed,
+                    enable_capcut_fx=enable_capcut_fx,
+                    enable_white_flash=enable_white_flash,
+                    enable_vignette=enable_vignette,
+                    enable_film_grain=enable_film_grain,
+                    dynamic_box_theme=dynamic_box_theme,
                     enable_vo=enable_vo,
                     vo_type=vo_type_selected,
                     vo_voice=vo_voice_id,
